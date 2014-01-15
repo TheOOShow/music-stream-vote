@@ -57,7 +57,7 @@ class Vote {
                 LIMIT 1
             ",
             substr( $nick, 0, DB_NICK_LEN )
-        ) );
+        ), ARRAY_A );
     }
 
     /**
@@ -72,23 +72,27 @@ class Vote {
      * @return void
      */
     public static function new_vote(
-        $time_utc, $track_id, $stream_title, $value, $nick, $user_id, $is_authed
+        $time_utc, $track_id, $stream_title, $value, $nick, $user_id, $is_authed, $comment
     ) {
         global $wpdb;
 
-        $wpdb->insert(
-            Vote::table_name(),
-            array( 
-                'time_utc' => $time_utc,
-                'track_id' => $track_id,
-                'stream_title' => substr( $stream_title, 0, DB_STREAM_TITLE_LEN ),
-                'value' => $value,
-                'nick' => substr( $nick, 0, DB_NICK_LEN ),
-                'user_id' => substr( $user_id, 0, DB_USER_ID_LEN ),
-                'is_authed' => $is_authed
-            ),
-            array( '%s', '%s', '%s', '%d', '%s', '%s', '%d' )
+        $values = array( 
+            'time_utc' => $time_utc,
+            'track_id' => $track_id,
+            'stream_title' => substr( $stream_title, 0, DB_STREAM_TITLE_LEN ),
+            'value' => $value,
+            'nick' => substr( $nick, 0, DB_NICK_LEN ),
+            'user_id' => substr( $user_id, 0, DB_USER_ID_LEN ),
+            'is_authed' => $is_authed
         );
+        $formats = array( '%s', '%s', '%s', '%d', '%s', '%s', '%d' );
+
+        if ( $comment !== '' ) {
+            $values['comment'] = substr( $comment, 0, DB_COMMENT_LEN );
+            $formats[] = '%s';
+        }
+
+        $wpdb->insert( Vote::table_name(), $values, $formats );
     }
 
     /**
@@ -110,6 +114,64 @@ class Vote {
             array( '%d' ),
             array( '%d' )
         );
+    }
+
+    /**
+     * Get last 1000 votes by nick
+     * @param  string $nick
+     * @return int
+     */
+    public static function get_votes_by_nick( $nick, $start_date = NULL, $end_date = NULL ) {
+        global $wpdb;
+
+        if ( $start_date ) {
+            $start_date = $wpdb->prepare(
+                "AND v.time_utc >= %s", $start_date
+            );
+        }
+        if ( $end_date ) {
+            $end_date = $wpdb->prepare(
+                "AND time_utc < DATE_ADD(STR_TO_DATE(%s, %s), INTERVAL 1 DAY)", array($end_date, '%m/%d/%Y')
+            );
+        }
+
+        $sql = $wpdb->prepare(
+            "
+                SELECT v.time_utc, v.stream_title, t.title, t.artist, v.track_id, v.value
+                FROM ".Vote::table_name()." v
+                LEFT JOIN ".Track::table_name()." t ON t.id = v.track_id
+                WHERE nick=%s
+                AND deleted=0
+                $start_date
+                $end_date
+                ORDER BY time_utc DESC
+                LIMIT 1000
+            ",
+            substr( $nick, 0, DB_NICK_LEN )
+        );
+
+        return $wpdb->get_results( $sql, ARRAY_A );
+    }
+
+    /**
+     * Get last 1000 votes by nick
+     * @param  string $nick
+     * @return int
+     */
+    public static function get_votes_by_track_id( $track_id ) {
+        global $wpdb;
+
+        return $wpdb->get_results( $wpdb->prepare(
+            "
+                SELECT time_utc, nick, value
+                FROM ".Vote::table_name()."
+                WHERE track_id=%d
+                AND deleted=0
+                ORDER BY time_utc DESC
+                LIMIT 1000
+            ",
+            $track_id
+        ), ARRAY_A );
     }
 
 }

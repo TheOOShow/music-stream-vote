@@ -17,8 +17,17 @@ class ShortCodes {
         add_shortcode( 'recent_tracks', array( &$this, 'recent_tracks' ) );
         add_shortcode( 'last_day', array( &$this, 'last_day' ) );
         add_shortcode( 'top_hundred', array( &$this, 'top_hundred' ) );
+        add_shortcode( 'music_query', array( &$this, 'music_query' ) );
         add_action( 'wp_enqueue_scripts', array( &$this, 'add_js' ) );
         add_action( 'wp_head', array( &$this, 'js_vars' ) );
+        add_action( 'init', array( &$this, 'url_params' ) );
+    }
+
+    public function url_params() {
+        global $wp; 
+        foreach ( History::$field_names as $f ) {
+            $wp->add_query_var( $f );
+        }
     }
 
     /**
@@ -103,11 +112,16 @@ class ShortCodes {
         $n = 1;
         $out = array();
         foreach ( $top as $result ) {
-            $out[] = "<b>#$n</b> " . esc_html($result->stream_title) . " (score: $result->vote_total)<br />\n";
+            $out[] = "<b>#$n</b> " . esc_html($result['stream_title']) . " (score: " . $result['vote_total'] . ")<br />\n";
             $n++;
         }
         $out[] = "</p>\n";
         return implode( $out );
+    }
+
+    public function music_query() {
+        $hist = new History();
+        return $hist->render_form() . $hist->render_results();
     }
 
 }

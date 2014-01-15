@@ -14,22 +14,22 @@ class BotService {
      */
     function __construct() {
         add_action("parse_request", function( $wp) {
-	    	if ( $_POST[PLUGIN_SLUG . '_botcall'] == '1' ) {
-	    		Util::fix_wp_slashes();
-	    		$method = $_POST['method'];
-	    		$args = json_decode( $_POST['args'], TRUE );
+            if ( $_POST[PLUGIN_SLUG . '_botcall'] == '1' ) {
+                Util::fix_wp_slashes();
+                $method = $_POST['method'];
+                $args = json_decode( $_POST['args'], TRUE );
 
-	    		if ( $args['web_service_password'] != Options::get_instance()->web_service_password ) {
-	    			$this->fail( 'Invalid system_password.' );
-	    		}
+                if ( $args['web_service_password'] != Options::get_instance()->web_service_password ) {
+                    $this->fail( 'Invalid system_password.' );
+                }
                 if ( ! method_exists( $this, 'web_' . $method ) ) {
                     $this->fail( 'Invalid method name.' );
                 }
-    			$result = call_user_func( array( &$this, 'web_' . $method ), $args );
+                $result = call_user_func( array( &$this, 'web_' . $method ), $args );
 
-	    		echo json_encode( $result );
-	    		exit;
-	    	}
+                echo json_encode( $result );
+                exit;
+            }
         });
     }
 
@@ -119,9 +119,11 @@ class BotService {
      * @return mixed[] status; error_message; output (what to announce in IRC chat room)
      */
     private function web_help( $args ) {
+        $opt = Options::get_instance();
         return array(
             'status' => 'ok',
-            'output' => Options::get_instance()->txt_help
+            'output' => $opt->txt_help,
+            'private' => $opt->txt_help_switch
         );
     }
 
@@ -131,14 +133,15 @@ class BotService {
      * @return mixed[] status; error_message; output (what to announce in IRC chat room)
      */
     private function web_sayhi( $args ) {
-        $options = Options::get_instance();
-        $out = str_ireplace( '${nick}', $args['nick'], $options->txt_sayhi );
-        $out = str_ireplace( '${cmd_help}', $options->cmd_help, $out );
+        $opt = Options::get_instance();
+        $out = str_ireplace( '${nick}', $args['nick'], $opt->txt_sayhi );
+        $out = str_ireplace( '${cmd_help}', $opt->cmd_help, $out );
         $out = str_ireplace( '${value}', $num_txt, $out );
 
         return array(
             'status' => 'ok',
-            'output' => $out
+            'output' => $out,
+            'private' => $opt->txt_sayhi_switch
         );
     }
 
@@ -150,10 +153,17 @@ class BotService {
     private function web_post_vote( $args ) {
         $time_utc = $args['time_utc']; // YYYY-MM-DD HH:MM:SS
         $stream_title = $args['stream_title'];
-        $value = $args['value'];
         $nick = $args['nick'];
         $user_id = $args['user_id'];
         $is_authed = $args['is_authed'];
+
+        $value_parts = explode( ' ', $args['value'], 2 );
+        $value = str_replace( ['[', ']', '{', '}', '"', '\''], '', $value_parts[0] );
+        if ( count( $value_parts) == 1 ){
+            $comment = '';
+        } else {
+            $comment = $value_parts[1];
+        }
 
         $opt = Options::get_instance();
 
@@ -181,11 +191,13 @@ class BotService {
         if ( $vote_id ) {
             Vote::delete( $vote_id );
             $txt_vote_response = $opt->txt_revote_response;
+            $priv = $opt->txt_revote_response_switch;
         } else {
             $txt_vote_response = $opt->txt_vote_response;
+            $priv = $opt->txt_vote_response_switch;
         }
         Vote::new_vote(
-            $time_utc, $track_id, $stream_title, $num, $nick, $user_id, $is_authed
+            $time_utc, $track_id, $stream_title, $num, $nick, $user_id, $is_authed, $comment
         );
 
         if ( $num > 0 ) {
@@ -203,7 +215,8 @@ class BotService {
         return array(
             'status' => 'ok',
             'error_message' => '',
-            'output' => $out
+            'output' => $out,
+            'private' => $priv
         );
     }
 
@@ -215,6 +228,7 @@ class BotService {
     private function web_undo_vote( $args ) {
         $nick = $args['nick'];
         $vote = Vote::get_undoable_vote( $nick );
+        $opt = Options::get_instance();
 
         if ( $vote == NULL ) {
             $this->fail( $nick . ': Can\'t delete last vote if it is over 10 minutes old.' );
@@ -226,14 +240,15 @@ class BotService {
         Vote::delete( $vote->id );
         Track::update_vote( $vote->track_id );
 
-        $out = str_ireplace( '${stream_title}', $vote->stream_title, Options::get_instance()->txt_unvote_response );
+        $out = str_ireplace( '${stream_title}', $vote->stream_title, $opt->txt_unvote_response );
         $out = str_ireplace( '${nick}', $nick, $out );
         $out = str_ireplace( '${value}', $num_txt, $out );
 
         return array(
             'status' => 'ok',
             'error_message' => '',
-            'output' => $out
+            'output' => $out,
+            'private' => $opt->txt_unvote_response_switch
         );
     }
 
@@ -243,21 +258,53 @@ class BotService {
      * @return mixed[] status; error_message; output (what to announce in IRC chat room)
      */
     private function web_stats( $args ) {
-        $results = Track::top_ten_by_vote();
+        // This function is messy. Maybe clean it up later, but it works now.
 
-        $n = 1;
-        $out = array();
-        $out[] = "Top 10 tracks by vote total:   ";
-        foreach ( $results as $result ) {
-            $out[] = "<b>#$n</b> $result->stream_title (score: $result->vote_total)   ";
-            if ( $n % 3 == 1 ) { $out[] = "\n"; }
-            $n++;
-        }
+        $opt = Options::get_instance();
+
+        $lengths = array();
+        preg_replace_callback(
+            '/\$\{(\w+),(\d+)\}/',
+            function( $matches ) {
+                global $lengths;
+                $lengths[$matches[1]] = $matches[2];
+            },
+            $opt->txt_stats
+        );
+
+        // example: ${begin_repeat,10}#${num} ${title,21}${end_repeat}
+        $response = preg_replace_callback(
+            '/\$\{begin_repeat,(\d+)\}(.*?)\$\{end_repeat\}/i',
+            function( $matches ) {
+                global $lengths;
+                $limit = $matches[1];
+                $template = $matches[2];
+                $n = 1;
+                $out = array();
+                $results = Track::irc_stats( $limit );
+                foreach ( $results as $result ) {
+                    $v = get_object_vars($result);
+                    $stream_title = substr( $result->stream_title, 0, $lengths['stream_title'] );
+                    $title = substr( $result->title, 0, $lengths['title'] );
+                    $artist = substr( $result->artist, 0, $lengths['artist'] );
+                    $txt = $template;
+                    $txt = str_replace( '${stream_title,' . $lengths['stream_title'] . '}', $stream_title, $txt );
+                    $txt = str_replace( '${title,' . $lengths['title'] . '}', $title, $txt );
+                    $txt = str_replace( '${artist,' . $lengths['artist'] . '}', $artist, $txt );
+                    $txt = str_ireplace( '${num}', $n, $txt );
+                    $out[] = $txt;
+                    $n++;
+                }
+                return implode( ' ', $out );
+            },
+            $opt->txt_stats
+        );
 
         return array(
             'status' => 'ok',
             'error_message' => '',
-            'output' => trim( implode( '', $out ) )
+            'output' => $response,
+            'private' => $opt->txt_stats_switch
         );
     }
 
@@ -267,12 +314,12 @@ class BotService {
      * @return void
      */
     private function fail( $message ) {
-    	$result = array(
-    		'status' => 'error',
-    		'error_message' => $message
-    	);
-    	echo json_encode( $result );
-    	exit;
+        $result = array(
+            'status' => 'error',
+            'error_message' => $message
+        );
+        echo json_encode( $result );
+        exit;
     }
 
 /*

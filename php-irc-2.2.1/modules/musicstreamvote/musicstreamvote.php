@@ -71,6 +71,16 @@ class musicstreamvote extends module {
      * @var string
      */
     private $last_error = '';
+    /**
+     * Remember last stream status error message so it isn't repeated.
+     * @var string
+     */
+    private $last_stream_error = '';
+    /**
+     * Count of consecutive stream status query successes. (After a few, reset $last_stream_error .)
+     * @var int
+     */
+    private $stream_success_count = 0;
 
     /**
      * Start bot.
@@ -147,6 +157,7 @@ class musicstreamvote extends module {
      */
     public function evt_stream_poll() {
         $data = $this->streaminfo( $this->options['stream_status_url'] );
+        if ( $data['status'] != 'ok' ) { return TRUE; }
 
         if ( $data['stream_title'] != $this->now_playing ) {
             $this->now_playing = $data['stream_title'];
@@ -249,12 +260,11 @@ class musicstreamvote extends module {
      * @return void
      */
     private function evt_sayhi( $line, $args ) {
-        print_r($line);
         $response = $this->webservice( 'sayhi', array(
             'nick' => $line['fromNick'],
         ), $line );
         if ( $response['output'] ) {
-            $this->reply( $line, $response['output'] );
+            $this->reply( $line, $response['output'], $response['private'] );
         }
     }
 
@@ -270,7 +280,7 @@ class musicstreamvote extends module {
     public function cmd_help( $line, $args ) {
         $response = $this->webservice( 'help', array(), $line );
         if ( $response['output'] ) {
-            $this->reply( $line, $response['output'] );
+            $this->reply( $line, $response['output'], $response['private'] );
         }
     }
 
@@ -285,7 +295,7 @@ class musicstreamvote extends module {
      */
     public function cmd_nowplaying( $line, $args ) {
         if ( $this->now_playing_response ) {
-            $this->reply( $line, $this->now_playing_response );
+            $this->reply( $line, $this->now_playing_response, $this->options['now_playing_response_private'] );
         }
     }
 
@@ -324,7 +334,6 @@ class musicstreamvote extends module {
     public function cmd_vote_finish( $subject ) {
         $vote = $this->pending_votes[$subject];
         $line = $vote['line'];
-        $this->dbg("Continuing vote for $subject.");
         $response = $this->webservice( 'post_vote', array(
             'time_utc' => $vote['time_utc'],
             'stream_title' => $vote['stream_title'],
@@ -334,7 +343,7 @@ class musicstreamvote extends module {
             'is_authed' => $vote['is_authed'],
         ), $line );
         if ( $response['output'] ) {
-            $this->reply( $line, $response['output'] );
+            $this->reply( $line, $response['output'], $response['private'] );
         }
         unset($this->pending_votes[$subject]);
     }
@@ -352,9 +361,8 @@ class musicstreamvote extends module {
         $response = $this->webservice( 'undo_vote', array(
             'nick' => $line['fromNick'],
         ), $line );
-        print_r($response);
         if ( $response['output'] ) {
-            $this->reply( $line, $response['output'] );
+            $this->reply( $line, $response['output'], $response['private'] );
         }
     }
 
@@ -368,7 +376,7 @@ class musicstreamvote extends module {
      * @return void
      */
     public function cmd_like( $line, $args ) {
-        $args['query'] = '+3';
+        $args['query'] = trim( '+3 ' . $args['query'] );
         $this->cmd_vote( $line, $args );
     }
 
@@ -382,7 +390,22 @@ class musicstreamvote extends module {
      * @return void
      */
     public function cmd_hate( $line, $args ) {
-        $args['query'] = '-3';
+        $args['query'] = trim( '-3 ' . $args['query'] );
+        $this->cmd_vote( $line, $args );
+    }
+
+    /**
+     * Vote shortcut -- allow missing space after vote command
+     *
+     * Invoked by the framework.
+     * 
+     * @param  string[] $line
+     * @param  string[] $args
+     * @return void
+     */
+    public function cmd_shortvote( $line, $args ) {
+        $value = preg_replace( '/[^\d\.\-]/', '', $args['cmd'] );
+        $args['query'] = trim( $value . ' ' . $args['query'] );
         $this->cmd_vote( $line, $args );
     }
 
@@ -398,7 +421,7 @@ class musicstreamvote extends module {
     public function cmd_stats( $line, $args ) {
         $response = $this->webservice( 'stats', array(), $line );
         if ( $response['output'] ) {
-            $this->reply( $line, $response['output'] );
+            $this->reply( $line, $response['output'], $response['private'] );
         }
     }
 
@@ -419,13 +442,27 @@ class musicstreamvote extends module {
     }
 
     /**
+     * Send appropriate kind of IRC message (notice or privMsg according to options)
+     * @param  string $to recipient
+     * @param  string $output_line output
+     * @return void
+     */
+    private function channel_say( $to, $output_line ) {
+        if ( strcasecmp( $this->options['irc_msg_type'], 'notice' ) == 0 ) {
+            $this->ircClass->notice( $to, $output_line, $queue = 1 );
+        } else {
+            $this->ircClass->privMsg( $to, $output_line, $queue = 1 );
+        }
+    }
+
+    /**
      * Reply to nick (PM) or channel (not PM)
      * @param  string[] $line the data received from the framework for this event
      * @param  string $text what to say
      * @return void
      */
-    private function reply( $line, $text ) {
-        if ( $line['to'] == $this->options['irc_nick'] ) {
+    private function reply( $line, $text, $force_private = FALSE ) {
+        if ( $line['to'] == $this->options['irc_nick'] || $force_private ) {
             $to = $line['fromNick'];
         } else {
             $to = $line['to'];
@@ -436,7 +473,11 @@ class musicstreamvote extends module {
             $text
         );
         foreach ( explode( "\n", $text ) as $output_line ) {
-            $this->ircClass->privMsg($to, $output_line, $queue = 1);
+            if ( $to == $line['fromNick'] ) {
+                $this->ircClass->privMsg( $to, $output_line, $queue = 1 );
+            } else {
+                $this->channel_say( $to, $output_line );
+            }
         }
     }
 
@@ -459,8 +500,8 @@ class musicstreamvote extends module {
                         $key, $output_line, $queue = 1
                     );
                 } else {
-                    $this->ircClass->privMsg(
-                        $key, $output_line, $queue = 1
+                    $this->channel_say(
+                        $key, $output_line
                     );
                 }
             }
@@ -556,7 +597,7 @@ class musicstreamvote extends module {
         $data['stream_title'] = '';
         ob_end_clean();
 
-        if ( $result === FALSE ) {
+        if ( ( $result === FALSE ) || ( strlen( trim( $data['xml'] ) ) == 0 ) ) {
             $data = array();
             $data['status'] = 'error';
             $data['error_message'] = $error;
@@ -565,17 +606,34 @@ class musicstreamvote extends module {
             $data['status'] = 'ok';
             $data['error_message'] = '';
             $info = new SimpleXMLElement($data['xml']);
-            $data['stream_title'] = (string) $info->trackList[0]->track[0]->title[0];
+            //if ( $info->xpath( '*/track/title' ) ) {
+                $data['stream_title'] = $this->decode_bad_html_entities(
+                    (string) $info->trackList[0]->track[0]->title[0]
+                );
+            //} else {
+            //    $data['stream_title'] = '[offline]';
+            //}
         }
 
-        if ( $data['status'] == 'error' ) {
+        if ( ( $data['status'] == 'error' ) && ( $this->last_stream_error != $data['error_message'] ) ) {
             foreach ( $this->in_channels as $key => $value ) {
-                $this->ircClass->privMsg(
-                    $key, "\02Error:\017 " . $data['error_message'], $queue = 1
+                $this->channel_say(
+                    $key, "\02Stream status error:\017 " . $data['error_message']
                 );
             }
+            $this->last_stream_error = $data['error_message'];
         }
-  
+        if ( $data['status'] == 'ok' ) {
+            // after 24 good queries (4 minutes by default) reset last error message
+            $this->stream_success_count++;
+            if ( $this->stream_success_count >= 24 ) {
+                $this->stream_success_count = 24;
+                $this->last_stream_error = '';
+            }
+        } else {
+            $this->stream_success_count = 0;
+        }
+
         return $data;
     }
 
@@ -598,7 +656,7 @@ class musicstreamvote extends module {
      * Convert last json parse error to string
      * @return string
      */
-    public static function json_last_error_msg() {
+    private static function json_last_error_msg() {
         static $errors = array(
             JSON_ERROR_NONE             => null,
             JSON_ERROR_DEPTH            => 'Maximum stack depth exceeded',
@@ -609,6 +667,31 @@ class musicstreamvote extends module {
         );
         $error = json_last_error();
         return array_key_exists($error, $errors) ? $errors[$error] : "Unknown error ({$error})";
+    }
+
+    /**
+     * Change HTML entities in string to unicode characters
+     *
+     * Finds HTMl entities with decimal numbers and hexidecimal numbers in
+     * input string and turns them into unicode characters. Handles malformed
+     * entity references where "&"" is written as "& amp ;".
+     * 
+     * @param  [type] $text [description]
+     * @return [type]       [description]
+     */
+    private function decode_bad_html_entities( $text ) {
+        // example input: Pajama Parties (&amp;#12497;&amp;#12472;
+        // get it back to HTML entities: Pajama Parties (&#12497;&#12472;
+        $text = preg_replace_callback(
+            '/&amp;(#x{0,1})([\dabcdef]+);/i',
+            function ( $matches) {
+                print_r($matches);
+                return "&$matches[1]$matches[2];";
+            },
+            $text
+        );
+        // decode HTML entities
+        return html_entity_decode($text, ENT_HTML401);
     }
 
 }

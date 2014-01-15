@@ -3,7 +3,7 @@
 Plugin Name: Music Stream Vote
 Plugin URI: http://www.glump.net
 Description: Collects and displays votes for the track currently playing on your IceCast music radio station. Votes are collected via a bot in your station's IRC channel. Current stats can be shown in WordPress or in IRC.
-Version: 1.0
+Version: 1.1
 Author: Brendan Kidwell
 Author URI: http://www.glump.net
 License: GPL 3
@@ -61,9 +61,13 @@ define( __NAMESPACE__ . '\\DB_ARTIST_LEN', 100 );
  */
 define( __NAMESPACE__ . '\\DB_TITLE_LEN', 100 );
 /**
- * Database schema version
+ * Max length in DB for comment
  */
-define( __NAMESPACE__ . '\\DB_VERSION', 1 );
+define( __NAMESPACE__ . '\\DB_COMMENT_LEN', 200 );
+/**
+ * Database schema version -- increment this every time you change Db::update_schema() .
+ */
+define( __NAMESPACE__ . '\\DB_VERSION', 2 );
 
 spl_autoload_register( __NAMESPACE__ . '\\autoload' );
 /**

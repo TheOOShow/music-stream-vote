@@ -74,6 +74,14 @@ public static $option_defs = array(
         'r' => TRUE,
     ),
 
+    'irc_msg_type' => array(
+        't' => 'Message type',
+        'h' => '"notice" or "privmsg"; "privmsg" looks like a normal user talking and "notice" should get a less conspicuous alert in the user\'s chat program. Some servers won\'t let your bot send a "notice".',
+        'c' => '',
+        'd' => 'privmsg',
+        'r' => TRUE,
+    ),
+
 ),
 'WordPress Integration' => array(
 
@@ -113,13 +121,20 @@ public static $option_defs = array(
     ),
 
 ),
-'Command Names' => array(
+'Commands' => array(
 
     'cmd_help' => array(
         't' => 'Help command',
         'h' => 'Example: !help',
         'c' => '',
         'd' => '!help',
+        'r' => TRUE,
+    ),
+    'cmd_help_switch' => array(
+        't' => 'Help command enabled',
+        'h' => '',
+        'c' => '',
+        'd' => '1',
         'r' => TRUE,
     ),
 
@@ -130,12 +145,26 @@ public static $option_defs = array(
         'd' => '!np',
         'r' => TRUE,
     ),
+    'cmd_nowplaying_switch' => array(
+        't' => 'Now Playing command enabled',
+        'h' => '',
+        'c' => '',
+        'd' => '1',
+        'r' => TRUE,
+    ),
 
     'cmd_vote' => array(
         't' => 'Vote command',
         'h' => 'Example: !vote !v',
         'c' => '',
         'd' => '!vote !v',
+        'r' => TRUE,
+    ),
+    'cmd_vote_switch' => array(
+        't' => 'Vote command enabled',
+        'h' => '',
+        'c' => '',
+        'd' => '1',
         'r' => TRUE,
     ),
 
@@ -146,12 +175,26 @@ public static $option_defs = array(
         'd' => '!unvote',
         'r' => TRUE,
     ),
+    'cmd_unvote_switch' => array(
+        't' => 'Unvote command enabled',
+        'h' => '',
+        'c' => '',
+        'd' => '1',
+        'r' => TRUE,
+    ),
 
     'cmd_like' => array(
         't' => 'Like command',
         'h' => 'Example: !l',
         'c' => '',
         'd' => '!l',
+        'r' => TRUE,
+    ),
+    'cmd_like_switch' => array(
+        't' => 'Like command enabled',
+        'h' => '',
+        'c' => '',
+        'd' => '1',
         'r' => TRUE,
     ),
 
@@ -162,6 +205,13 @@ public static $option_defs = array(
         'd' => '!h',
         'r' => TRUE,
     ),
+    'cmd_hate_switch' => array(
+        't' => 'Hate command enabled',
+        'h' => '',
+        'c' => '',
+        'd' => '1',
+        'r' => TRUE,
+    ),
 
     'cmd_stats' => array(
         't' => 'Stats command',
@@ -170,15 +220,29 @@ public static $option_defs = array(
         'd' => '!stats',
         'r' => TRUE,
     ),
+    'cmd_stats_switch' => array(
+        't' => 'Stats command enabled',
+        'h' => '',
+        'c' => '',
+        'd' => '1',
+        'r' => TRUE,
+    ),
 
 ),
-'Output Strings' => array(
+'Responses' => array(
 
     'txt_sayhi' => array(
         't' => 'Say hi',
         'h' => 'What to say when a user is trying to find the help command.',
         'c' => 'msv-input-wide',
         'd' => 'Hello ${nick}. I\'m a bot for voting on the music being played. Say "${cmd_help}" for help.',
+        'r' => FALSE,
+    ),
+    'txt_sayhi_switch' => array(
+        't' => 'Say hi private reply',
+        'h' => '',
+        'c' => '',
+        'd' => '0',
         'r' => FALSE,
     ),
 
@@ -196,6 +260,13 @@ public static $option_defs = array(
 <b>!stats</b>    Show some stats.",
         'r' => FALSE,
     ),
+    'txt_help_switch' => array(
+        't' => 'Help private reply',
+        'h' => '',
+        'c' => '',
+        'd' => '0',
+        'r' => FALSE,
+    ),
 
     'txt_now_playing' => array(
         't' => 'Now playing',
@@ -204,12 +275,26 @@ public static $option_defs = array(
         'd' => '<b>Now playing:</b> ${stream_title}',
         'r' => FALSE,
     ),
+    'txt_now_playing_switch' => array(
+        't' => 'Now playing private reply',
+        'h' => '',
+        'c' => '',
+        'd' => '0',
+        'r' => TRUE,
+    ),
 
     'txt_vote_response' => array(
         't' => 'Vote response',
         'h' => 'Example: <b>${nick}</b> voted ${value} for ${stream_title}.',
         'c' => 'msv-input-wide',
         'd' => '<b>${nick}</b> voted ${value} for ${stream_title}.',
+        'r' => FALSE,
+    ),
+    'txt_vote_response_switch' => array(
+        't' => 'Vote private reply',
+        'h' => '',
+        'c' => '',
+        'd' => '0',
         'r' => FALSE,
     ),
 
@@ -220,6 +305,13 @@ public static $option_defs = array(
         'd' => '<b>${nick}</b> changed vote to ${value} for ${stream_title}.',
         'r' => FALSE,
     ),
+    'txt_revote_response_switch' => array(
+        't' => 'Re-Vote private reply',
+        'h' => '',
+        'c' => '',
+        'd' => '0',
+        'r' => FALSE,
+    ),
 
     'txt_unvote_response' => array(
         't' => 'Unvote response',
@@ -228,12 +320,34 @@ public static $option_defs = array(
         'd' => '<b>${nick}</b> undid a vote for ${stream_title}.',
         'r' => FALSE,
     ),
+    'txt_unvote_response_switch' => array(
+        't' => 'Unvote private reply',
+        'h' => '',
+        'c' => '',
+        'd' => '0',
+        'r' => FALSE,
+    ),
+
+    'txt_stats' => array(
+        't' => 'Stats',
+        'h' => 'Example: ${begin_repeat,10}#${num} ${title,21}${end_repeat}. Other variables: ${artist,CHARS}, ${stream_title,CHARS}. NOTE: The output will be limited to 255 characters.',
+        'c' => 'msv-input-wide',
+        'd' => '${begin_repeat,10}#${num} ${title,21}${end_repeat}',
+        'r' => FALSE,
+    ),
+    'txt_stats_switch' => array(
+        't' => 'Stats private reply',
+        'h' => '',
+        'c' => '',
+        'd' => '0',
+        'r' => FALSE,
+    ),
 
 ),
 'Miscellaneous' => array(
 
     'restart_poll_interval_sec' => array(
-        't' => 'Bot restart file polling interval',
+        't' => 'Bot restart file polling interval (seconds)',
         'h' => 'Only for when WordPress and the bot are on the same host.',
         'c' => '',
         'd' => '10',

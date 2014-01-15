@@ -1,4 +1,4 @@
-jQuery(document).ready(function($) {
+jQuery( document ).ready( function( $ ) {
 	var np = $( '.now-playing' );
 	var recent = $( '.recent-tracks' );
 
@@ -14,12 +14,12 @@ jQuery(document).ready(function($) {
 					} );
 				}
 			}
+			window.setTimeout( loadNowPlaying, 10000 );
 		} );
-		window.setTimeout( loadNowPlaying, 10000 );
 	};
 
 	// only do "now playing" polling if there is a "now playing" shortcode onscreen
 	if ( np.length || recent.length ) {
 		window.setTimeout( loadNowPlaying, 10000 );	
 	}
-});
+} );

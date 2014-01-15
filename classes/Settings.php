@@ -10,15 +10,63 @@ namespace GlumpNet\WordPress\MusicStreamVote;
  */
 class Settings {
     /**
+     * WordPress internal ID of our admin screen
+     * @var string
+     */
+    private $screen_id;
+
+    /**
      * Add display_settings() to admin screen.
      */
-    function __construct() {
+    public function __construct() {
         add_action('admin_menu', function() {
-        	add_options_page(
+        	$this->screen_id = add_options_page(
         		PLUGIN_NAME, PLUGIN_NAME, 'manage_options',
         		PLUGIN_SLUG, array( &$this, 'display_settings' )
     		);
         });
+
+        add_filter( 'contextual_help', array( &$this, 'help' ), 10, 3 );
+        add_action( 'admin_enqueue_scripts', array( &$this, 'js' ) );
+    }
+
+    /**
+     * Load JavaScript for admin screen
+     * @return void
+     */
+    public function js() {
+        if ( $_GET['page'] != PLUGIN_SLUG ) {
+            return;
+        }
+        wp_enqueue_script( PLUGIN_SLUG . '_js', PLUGIN_URL . 'js/settings.js' );
+    }
+
+    /**
+     * Display help box at the top of the Settings screen
+     * @param  string $contextual_help Help text
+     * @param  string $screen_id Screen ID of help being rendered now
+     * @param  mixed $screen
+     * @return string $contextual_help unchanged if not our screen; else help text
+     */
+    public function help( $contextual_help, $screen_id, $screen ) {
+        if ( $screen_id != $this->screen_id ) {
+            return $contextual_help;
+        }
+
+        $h = Help::get_instance();
+        $pages = $h->get_contextual_pages();
+        $tabs = [];
+        $i = 0;
+        foreach ( $pages as $page ) {
+            $screen->add_help_tab( array(
+                'id' => "help_tab_$i",
+                'title' => $page[1],
+                'content' => $h->render( $page[0], TRUE )
+            ) );
+            $i++;
+        }
+
+        $screen->set_help_sidebar( $h->render( 'contextual_help_sidebar', TRUE ) );
     }
 
     /**
@@ -26,6 +74,11 @@ class Settings {
      * @return void
      */
     function display_settings() {
+        if ( isset( $_GET['help'] ) ) {
+            Help::get_instance()->render();
+            return;
+        }
+
     	$opt = Options::get_instance();
         $state = State::get_instance();
     	$opt_saved = FALSE;
@@ -39,7 +92,11 @@ class Settings {
     	if ( $_POST[PLUGIN_SLUG . '_o'] == '1' ) {
             Util::fix_wp_slashes();
             foreach ( $opt->get_option_names() as $key ) {
-                $opt->__set( $key, $_POST[PLUGIN_SLUG . '_' . $key] );
+                if ( substr( $key, -7 ) == '_switch' ) {
+                    $opt->__set( $key, ($_POST[PLUGIN_SLUG . '_' . $key] == '1') ? '1' : '0' );
+                } else {
+                    $opt->__set( $key, $_POST[PLUGIN_SLUG . '_' . $key] );
+                }
             }
             $opt->save();
             if ( $opt->need_restart ) {
